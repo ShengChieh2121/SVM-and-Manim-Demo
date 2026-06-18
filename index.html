@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SVM Kernel Trick Demo</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --ink: #18202a;
+      --muted: #5d6875;
+      --line: #dce2ea;
+      --blue: #2f80ed;
+      --red: #eb5757;
+      --yellow: #f2c94c;
+      --panel: #f7f9fc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #ffffff;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding: 24px clamp(18px, 4vw, 44px);
+      background: #ffffff;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: 0;
+    }
+
+    header p {
+      margin: 0;
+      max-width: 880px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      min-height: calc(100vh - 116px);
+    }
+
+    aside {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 22px;
+    }
+
+    .controls {
+      display: grid;
+      gap: 18px;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .value {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .note {
+      margin-top: 24px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .plots {
+      padding: 22px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+      align-content: start;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 74px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+
+    .metric strong {
+      font-size: 22px;
+    }
+
+    .chart {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 520px;
+      overflow: hidden;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SVM Kernel Trick Demo</h1>
+    <p>
+      A static GitHub Pages companion to the Python project. Adjust the controls to see how a radial decision function changes the 2D boundary and 3D confidence surface.
+    </p>
+  </header>
+
+  <main>
+    <aside>
+      <div class="controls">
+        <label>
+          Gamma <span class="value" id="gammaValue"></span>
+          <input id="gamma" type="range" min="0.05" max="5" step="0.05" value="1" />
+        </label>
+        <label>
+          C-like sharpness <span class="value" id="cValue"></span>
+          <input id="sharpness" type="range" min="0.5" max="6" step="0.1" value="2.5" />
+        </label>
+        <label>
+          Noise <span class="value" id="noiseValue"></span>
+          <input id="noise" type="range" min="0" max="0.45" step="0.01" value="0.08" />
+        </label>
+        <label>
+          Points <span class="value" id="pointsValue"></span>
+          <input id="points" type="range" min="40" max="220" step="10" value="120" />
+        </label>
+      </div>
+
+      <p class="note">
+        This browser demo is intentionally lightweight. The full repo includes the real sklearn SVM, Streamlit app, and Manim animation.
+      </p>
+      <p class="note" id="teachingNote"></p>
+    </aside>
+
+    <section class="plots">
+      <div class="metrics">
+        <div class="metric"><span>Decision rule</span><strong>radial RBF</strong></div>
+        <div class="metric"><span>Boundary</span><strong>f = 0</strong></div>
+        <div class="metric"><span>Inner class</span><strong style="color: var(--blue)">blue</strong></div>
+        <div class="metric"><span>Outer class</span><strong style="color: var(--red)">red</strong></div>
+      </div>
+      <div id="plot2d" class="chart"></div>
+      <div id="plot3d" class="chart"></div>
+    </section>
+  </main>
+
+  <script>
+    const BLUE = "#2f80ed";
+    const RED = "#eb5757";
+    const YELLOW = "#f2c94c";
+
+    function mulberry32(seed) {
+      return function () {
+        seed |= 0;
+        seed = seed + 0x6d2b79f5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function normal(rng) {
+      const u = Math.max(rng(), 1e-8);
+      const v = Math.max(rng(), 1e-8);
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+
+    function sampleAnnulus(rng, n, minR, maxR, noise) {
+      const x = [];
+      const y = [];
+      for (let i = 0; i < n; i += 1) {
+        const r = Math.sqrt(minR * minR + rng() * (maxR * maxR - minR * minR));
+        const theta = rng() * 2 * Math.PI;
+        x.push(r * Math.cos(theta) + normal(rng) * noise);
+        y.push(r * Math.sin(theta) + normal(rng) * noise);
+      }
+      return { x, y };
+    }
+
+    function linspace(start, end, n) {
+      const values = [];
+      const step = (end - start) / (n - 1);
+      for (let i = 0; i < n; i += 1) values.push(start + i * step);
+      return values;
+    }
+
+    function decision(x, y, gamma, sharpness) {
+      const radius2 = x * x + y * y;
+      const innerInfluence = Math.exp(-gamma * radius2);
+      const outerInfluence = Math.exp(-gamma * Math.pow(Math.sqrt(radius2) - 2.05, 2));
+      return sharpness * (outerInfluence - innerInfluence);
+    }
+
+    function render() {
+      const gamma = Number(document.getElementById("gamma").value);
+      const sharpness = Number(document.getElementById("sharpness").value);
+      const noise = Number(document.getElementById("noise").value);
+      const points = Number(document.getElementById("points").value);
+
+      document.getElementById("gammaValue").textContent = gamma.toFixed(2);
+      document.getElementById("cValue").textContent = sharpness.toFixed(1);
+      document.getElementById("noiseValue").textContent = noise.toFixed(2);
+      document.getElementById("pointsValue").textContent = String(points);
+
+      const note = gamma < 0.2
+        ? "Small gamma: smoother boundary, wider influence."
+        : gamma > 3
+          ? "Large gamma: more flexible surface, easier to overfit."
+          : "Medium gamma: balanced radial influence.";
+      document.getElementById("teachingNote").textContent = note;
+
+      const rng = mulberry32(7);
+      const nInner = Math.round(points * 0.44);
+      const inner = sampleAnnulus(rng, nInner, 0, 1, noise);
+      const outer = sampleAnnulus(rng, points - nInner, 1.6, 2.5, noise);
+      const xs = linspace(-3, 3, 80);
+      const ys = linspace(-3, 3, 80);
+      const z = ys.map((yy) => xs.map((xx) => decision(xx, yy, gamma, sharpness)));
+      const innerZ = inner.x.map((x, i) => decision(x, inner.y[i], gamma, sharpness));
+      const outerZ = outer.x.map((x, i) => decision(x, outer.y[i], gamma, sharpness));
+
+      Plotly.react("plot2d", [
+        {
+          type: "contour",
+          x: xs,
+          y: ys,
+          z,
+          contours: { start: -1, end: 1, size: 1, coloring: "none", showlabels: true },
+          line: { color: "rgba(120,120,120,0.8)", width: 1.5 },
+          showscale: false,
+          name: "Margins"
+        },
+        {
+          type: "contour",
+          x: xs,
+          y: ys,
+          z,
+          contours: { start: 0, end: 0, size: 1, coloring: "none" },
+          line: { color: YELLOW, width: 4 },
+          showscale: false,
+          name: "f = 0"
+        },
+        {
+          type: "scatter",
+          mode: "markers",
+          x: inner.x,
+          y: inner.y,
+          marker: { color: BLUE, size: 8, line: { color: "white", width: 1 } },
+          name: "Inner class"
+        },
+        {
+          type: "scatter",
+          mode: "markers",
+          x: outer.x,
+          y: outer.y,
+          marker: { color: RED, size: 8, line: { color: "white", width: 1 } },
+          name: "Outer class"
+        }
+      ], {
+        title: "2D Decision Boundary",
+        margin: { l: 42, r: 20, t: 50, b: 42 },
+        xaxis: { title: "x", scaleanchor: "y", scaleratio: 1 },
+        yaxis: { title: "y" },
+        legend: { orientation: "h" }
+      }, { responsive: true });
+
+      Plotly.react("plot3d", [
+        {
+          type: "surface",
+          x: xs,
+          y: ys,
+          z,
+          colorscale: "RdBu",
+          opacity: 0.84,
+          colorbar: { title: "f(x,y)" },
+          name: "Decision surface"
+        },
+        {
+          type: "scatter3d",
+          mode: "markers",
+          x: inner.x,
+          y: inner.y,
+          z: innerZ,
+          marker: { color: BLUE, size: 4 },
+          name: "Inner class"
+        },
+        {
+          type: "scatter3d",
+          mode: "markers",
+          x: outer.x,
+          y: outer.y,
+          z: outerZ,
+          marker: { color: RED, size: 4 },
+          name: "Outer class"
+        }
+      ], {
+        title: "3D Decision Function Surface",
+        margin: { l: 0, r: 0, t: 50, b: 0 },
+        scene: {
+          xaxis: { title: "x" },
+          yaxis: { title: "y" },
+          zaxis: { title: "decision score" }
+        },
+        legend: { orientation: "h" }
+      }, { responsive: true });
+    }
+
+    ["gamma", "sharpness", "noise", "points"].forEach((id) => {
+      document.getElementById(id).addEventListener("input", render);
+    });
+
+    render();
+  </script>
+</body>
+</html>
