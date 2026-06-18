@@ -10,6 +10,14 @@ This project has three independent parts:
 2. A real sklearn RBF SVM visualization of the decision function.
 3. A Streamlit and Plotly app for exploring kernels, `C`, `gamma`, noise, and support vectors.
 
+Live static demo:
+
+```text
+https://shengchieh2121.github.io/SVM-and-Manim-Demo/
+```
+
+The live GitHub Pages demo is a browser-only companion. The full sklearn, Streamlit, and Manim versions are in the Python files below.
+
 ## Educational Story
 
 The dataset has blue points near the origin and red points in an outer ring. In the original 2D plane, a straight line cannot separate the classes. A feature map can lift points into a higher-dimensional space where a linear separator may exist. Kernel SVMs use this idea to learn nonlinear decision boundaries in the original input space.
